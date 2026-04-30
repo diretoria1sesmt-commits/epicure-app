@@ -10,7 +10,122 @@
 <title>Epicure Cigar Sommelier v8.1</title>
 <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+// Minimal Supabase client using fetch() - no CDN needed
+window.supabase = {
+  createClient: function(url, key) {
+    var base = url + '/rest/v1';
+    var headers = {
+      'apikey': key,
+      'Authorization': 'Bearer ' + key,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal'
+    };
+    function rest(method, table, body, params) {
+      var qs = params ? '?' + Object.keys(params).map(function(k){
+        return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);
+      }).join('&') : '';
+      return fetch(base+'/'+table+qs, {
+        method: method,
+        headers: Object.assign({}, headers, body && method!=='GET' ? {'Content-Length': JSON.stringify(body).length} : {}),
+        body: body ? JSON.stringify(body) : undefined
+      }).then(function(r){
+        if(r.status===204||r.status===201||r.status===200){
+          return r.text().then(function(t){
+            try{var d=JSON.parse(t);return {data:d,error:null};}
+            catch(e){return {data:null,error:null};}
+          });
+        }
+        return r.text().then(function(t){
+          try{var d=JSON.parse(t);return {data:null,error:d};}
+          catch(e){return {data:null,error:{message:t}};}
+        });
+      }).catch(function(e){return {data:null,error:{message:e.message}};});
+    }
+    function query(table) {
+      var _filters = [], _order = null, _limit = null, _select = '*', _single = false, _eq_field = null, _eq_val = null, _count = null, _head = false;
+      var q = {
+        select: function(s,opts){ _select=s; if(opts&&opts.count)_count=opts.count; if(opts&&opts.head)_head=true; return q; },
+        eq: function(f,v){ _filters.push(f+'=eq.'+encodeURIComponent(v)); return q; },
+        order: function(f){ _order=f; return q; },
+        limit: function(n){ _limit=n; return q; },
+        single: function(){ _single=true; return q; },
+        then: function(resolve, reject){
+          var params = {};
+          if(_select && !_head) params['select'] = _select;
+          _filters.forEach(function(f){ 
+            var parts = f.split('='); 
+            params[parts[0]] = parts.slice(1).join('=');
+          });
+          if(_order) params['order'] = _order;
+          if(_limit) params['limit'] = _limit;
+          if(_count) { params['select'] = _select; }
+          var hdrs = Object.assign({}, headers);
+          if(_count) hdrs['Prefer'] = 'count='+_count;
+          if(_head) hdrs['Prefer'] = 'count=exact';
+          var qs = Object.keys(params).length ? '?'+Object.keys(params).map(function(k){return k+'='+params[k];}).join('&') : '';
+          return fetch(base+'/'+table+qs, {method:_head?'HEAD':'GET', headers:hdrs})
+            .then(function(r){
+              var count = r.headers.get('content-range') ? parseInt(r.headers.get('content-range').split('/')[1]) : null;
+              if(r.status===200){
+                return r.json().then(function(d){
+                  var result = {data: _single?(d&&d[0]?d[0]:null):d, error:null, count:count};
+                  if(_single&&(!d||!d[0]))result.error={message:'No rows found'};
+                  return result;
+                });
+              }
+              if(r.status===204)return {data:null,error:null,count:count};
+              return r.text().then(function(t){try{return {data:null,error:JSON.parse(t),count:null};}catch(e){return {data:null,error:{message:t},count:null};}});
+            }).catch(function(e){return {data:null,error:{message:e.message}};})
+            .then(resolve, reject);
+        }
+      };
+      return q;
+    }
+    return {
+      from: function(table) {
+        return {
+          select: function(s,opts){ return query(table).select(s,opts); },
+          upsert: function(body){
+            var arr = Array.isArray(body)?body:[body];
+            return fetch(base+'/'+table, {
+              method: 'POST',
+              headers: Object.assign({}, headers, {'Prefer': 'resolution=merge-duplicates,return=minimal'}),
+              body: JSON.stringify(arr)
+            }).then(function(r){
+              if(r.status>=200&&r.status<300)return {data:null,error:null};
+              return r.text().then(function(t){try{return {data:null,error:JSON.parse(t)};}catch(e){return {data:null,error:{message:t}};}});
+            }).catch(function(e){return {data:null,error:{message:e.message}};});
+          },
+          insert: function(body){ return rest('POST', table, Array.isArray(body)?body:[body], null); },
+          update: function(body){ 
+            var _filters=[];
+            var u={eq:function(f,v){_filters.push(f+'=eq.'+v);return u;},then:function(res,rej){
+              var qs=_filters.length?'?'+_filters.join('&'):'';
+              return fetch(base+'/'+table+qs,{method:'PATCH',headers:headers,body:JSON.stringify(body)})
+                .then(function(r){return r.status<300?{data:null,error:null}:r.json().then(function(d){return {data:null,error:d};});})
+                .then(res,rej);
+            }};return u;
+          },
+          delete: function(){ 
+            var _filters=[];
+            var d={eq:function(f,v){_filters.push(f+'=eq.'+v);return d;},then:function(res,rej){
+              var qs=_filters.length?'?'+_filters.join('&'):'';
+              return fetch(base+'/'+table+qs,{method:'DELETE',headers:headers})
+                .then(function(r){return {data:null,error:r.ok?null:{message:'Delete failed '+r.status}};})
+                .then(res,rej);
+            }};return d;
+          },
+          eq: function(f,v){ return query(table).eq(f,v); },
+          order: function(f){ return query(table).order(f); },
+        };
+      },
+      channel: function(){ return {on:function(){return {on:function(){return {subscribe:function(){return null;}};}};}}; },
+      removeChannel: function(){}
+    };
+  }
+};
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
