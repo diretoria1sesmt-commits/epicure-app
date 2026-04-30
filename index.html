@@ -599,12 +599,10 @@ function AppSommelier(p){
     function toggleAv(id){setAsn(function(prev){return prev.indexOf(id)>-1?prev.filter(function(x){return x!==id;}):[...prev,id];});}
     function save(){
       if(!nm||cgs.length===0||asn.length===0)return;
-      alert('save() chamado! USE_CLOUD='+USE_CLOUD+' supabase='+!!supabase+' nm='+nm+' cigars='+cgs.length+' assigned='+asn.length);
       setSav(true);
       var ss={id:(initData&&initData.id)||nid(),name:nm,status:(initData&&initData.status)||'ativa',createdAt:(initData&&initData.createdAt)||today(),cigars:cgs,assignedTo:asn,turmaId:turmaId};
       upd(function(st){var filtered=initData?st.sessions.filter(function(x){return x.id!==initData.id;}):st.sessions;return Object.assign({},st,{sessions:[ss].concat(filtered)});});
       DB.saveSession(ss).then(function(){
-        alert('Sessão salva no Supabase com sucesso! ID: '+ss.id);
         return DB.loadAll(null);
       }).catch(function(e){
         alert('ERRO ao salvar sessão:\n'+(e&&e.message?e.message:JSON.stringify(e))+'\n\nUSE_CLOUD='+USE_CLOUD+'\nSupabase='+(!!supabase));
