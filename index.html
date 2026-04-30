@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Epicure">
 <meta name="theme-color" content="#1A1612">
-<title>Epicure Cigar Sommelier</title>
+<title>Epicure Cigar Sommelier v8.1</title>
 <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -94,6 +94,12 @@ var SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 var supabase=null;
 var USE_CLOUD=SUPA_URL!=='SUPABASE_URL_AQUI';
 if(USE_CLOUD){try{supabase=window.supabase.createClient(SUPA_URL,SUPA_KEY);
+  // Quick connectivity test
+  supabase.from('users').select('count',{count:'exact',head:true}).then(function(r){
+    console.log('Supabase test - error:',r.error,'count:',r.count);
+    if(r.error){console.error('SUPABASE NOT ACCESSIBLE:',JSON.stringify(r.error));}
+    else{console.log('Supabase OK - users count:',r.count);}
+  });
   }catch(e){console.error('Supabase init error:',e);}}
 
 // ── Constants ──
