@@ -296,8 +296,14 @@ function DB_loadAll(userId){
 }
 function DB_saveSession(ss){
   if(!USE_CLOUD||!supabase)return Promise.resolve();
+  console.log('DB_saveSession called, id:',ss.id,'name:',ss.name);
   return supabase.from('sessions').upsert({id:ss.id,name:ss.name,status:ss.status,created_at:ss.createdAt,assigned_to:Array.isArray(ss.assignedTo)?ss.assignedTo:[],turma_id:ss.turmaId||null}).then(function(r1){
-    if(r1.error){console.error('saveSession error:',r1.error);throw new Error(r1.error.message);}
+    console.log('sessions upsert result:', JSON.stringify(r1));
+    if(r1.error){
+      alert('ERRO sessions: '+JSON.stringify(r1.error));
+      console.error('saveSession error:',r1.error);throw new Error(r1.error.message);
+    }
+    alert('Session saved OK! ID: '+ss.id);
     var chain=Promise.resolve();
     ss.cigars.forEach(function(c,i){
       chain=chain.then(function(){
