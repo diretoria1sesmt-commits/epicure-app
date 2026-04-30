@@ -10,122 +10,7 @@
 <title>Epicure Cigar Sommelier v8.1</title>
 <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
-<script>
-// Minimal Supabase client using fetch() - no CDN needed
-window.supabase = {
-  createClient: function(url, key) {
-    var base = url + '/rest/v1';
-    var headers = {
-      'apikey': key,
-      'Authorization': 'Bearer ' + key,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal'
-    };
-    function rest(method, table, body, params) {
-      var qs = params ? '?' + Object.keys(params).map(function(k){
-        return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);
-      }).join('&') : '';
-      return fetch(base+'/'+table+qs, {
-        method: method,
-        headers: Object.assign({}, headers, body && method!=='GET' ? {'Content-Length': JSON.stringify(body).length} : {}),
-        body: body ? JSON.stringify(body) : undefined
-      }).then(function(r){
-        if(r.status===204||r.status===201||r.status===200){
-          return r.text().then(function(t){
-            try{var d=JSON.parse(t);return {data:d,error:null};}
-            catch(e){return {data:null,error:null};}
-          });
-        }
-        return r.text().then(function(t){
-          try{var d=JSON.parse(t);return {data:null,error:d};}
-          catch(e){return {data:null,error:{message:t}};}
-        });
-      }).catch(function(e){return {data:null,error:{message:e.message}};});
-    }
-    function query(table) {
-      var _filters = [], _order = null, _limit = null, _select = '*', _single = false, _eq_field = null, _eq_val = null, _count = null, _head = false;
-      var q = {
-        select: function(s,opts){ _select=s; if(opts&&opts.count)_count=opts.count; if(opts&&opts.head)_head=true; return q; },
-        eq: function(f,v){ _filters.push(f+'=eq.'+encodeURIComponent(v)); return q; },
-        order: function(f){ _order=f; return q; },
-        limit: function(n){ _limit=n; return q; },
-        single: function(){ _single=true; return q; },
-        then: function(resolve, reject){
-          var params = {};
-          if(_select && !_head) params['select'] = _select;
-          _filters.forEach(function(f){ 
-            var parts = f.split('='); 
-            params[parts[0]] = parts.slice(1).join('=');
-          });
-          if(_order) params['order'] = _order;
-          if(_limit) params['limit'] = _limit;
-          if(_count) { params['select'] = _select; }
-          var hdrs = Object.assign({}, headers);
-          if(_count) hdrs['Prefer'] = 'count='+_count;
-          if(_head) hdrs['Prefer'] = 'count=exact';
-          var qs = Object.keys(params).length ? '?'+Object.keys(params).map(function(k){return k+'='+params[k];}).join('&') : '';
-          return fetch(base+'/'+table+qs, {method:_head?'HEAD':'GET', headers:hdrs})
-            .then(function(r){
-              var count = r.headers.get('content-range') ? parseInt(r.headers.get('content-range').split('/')[1]) : null;
-              if(r.status===200){
-                return r.json().then(function(d){
-                  var result = {data: _single?(d&&d[0]?d[0]:null):d, error:null, count:count};
-                  if(_single&&(!d||!d[0]))result.error={message:'No rows found'};
-                  return result;
-                });
-              }
-              if(r.status===204)return {data:null,error:null,count:count};
-              return r.text().then(function(t){try{return {data:null,error:JSON.parse(t),count:null};}catch(e){return {data:null,error:{message:t},count:null};}});
-            }).catch(function(e){return {data:null,error:{message:e.message}};})
-            .then(resolve, reject);
-        }
-      };
-      return q;
-    }
-    return {
-      from: function(table) {
-        return {
-          select: function(s,opts){ return query(table).select(s,opts); },
-          upsert: function(body){
-            var arr = Array.isArray(body)?body:[body];
-            return fetch(base+'/'+table, {
-              method: 'POST',
-              headers: Object.assign({}, headers, {'Prefer': 'resolution=merge-duplicates,return=minimal'}),
-              body: JSON.stringify(arr)
-            }).then(function(r){
-              if(r.status>=200&&r.status<300)return {data:null,error:null};
-              return r.text().then(function(t){try{return {data:null,error:JSON.parse(t)};}catch(e){return {data:null,error:{message:t}};}});
-            }).catch(function(e){return {data:null,error:{message:e.message}};});
-          },
-          insert: function(body){ return rest('POST', table, Array.isArray(body)?body:[body], null); },
-          update: function(body){ 
-            var _filters=[];
-            var u={eq:function(f,v){_filters.push(f+'=eq.'+v);return u;},then:function(res,rej){
-              var qs=_filters.length?'?'+_filters.join('&'):'';
-              return fetch(base+'/'+table+qs,{method:'PATCH',headers:headers,body:JSON.stringify(body)})
-                .then(function(r){return r.status<300?{data:null,error:null}:r.json().then(function(d){return {data:null,error:d};});})
-                .then(res,rej);
-            }};return u;
-          },
-          delete: function(){ 
-            var _filters=[];
-            var d={eq:function(f,v){_filters.push(f+'=eq.'+v);return d;},then:function(res,rej){
-              var qs=_filters.length?'?'+_filters.join('&'):'';
-              return fetch(base+'/'+table+qs,{method:'DELETE',headers:headers})
-                .then(function(r){return {data:null,error:r.ok?null:{message:'Delete failed '+r.status}};})
-                .then(res,rej);
-            }};return d;
-          },
-          eq: function(f,v){ return query(table).eq(f,v); },
-          order: function(f){ return query(table).order(f); },
-        };
-      },
-      channel: function(){ return {on:function(){return {on:function(){return {subscribe:function(){return null;}};}};}}; },
-      removeChannel: function(){}
-    };
-  }
-};
-</script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -208,9 +93,9 @@ var SUPA_URL='https://kgsmaimleqqporogzayb.supabase.co';
 var SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
 var supabase=null;
 var USE_CLOUD=SUPA_URL!=='SUPABASE_URL_AQUI';
-if(USE_CLOUD){try{supabase=window.supabase.createClient(SUPA_URL,SUPA_KEY);
+if(false){try{
   // Quick connectivity test
-  supabase.from('users').select('count',{count:'exact',head:true}).then(function(r){
+  // Connectivity test removed - using direct fetch
     console.log('Supabase test - error:',r.error,'count:',r.count);
     if(r.error){console.error('SUPABASE NOT ACCESSIBLE:',JSON.stringify(r.error));}
     else{console.log('Supabase OK - users count:',r.count);}
@@ -266,96 +151,109 @@ var _syncListeners=[];
 function onSyncChange(fn){_syncListeners.push(fn);}
 function setSyncStatus(s){_syncListeners.forEach(function(f){f(s);});}
 function DB_loadAll(userId){
-  if(!USE_CLOUD||!supabase)return Promise.resolve();
+  if(!USE_CLOUD)return Promise.resolve();
+  var key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+  var hdrs={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json'};
+  var base='https://kgsmaimleqqporogzayb.supabase.co/rest/v1';
+  var evUrl=base+'/evaluations?select=*&order=created_at';
+  if(userId&&userId!=='u1')evUrl+=('&evaluator_id=eq.'+encodeURIComponent(userId));
   setSyncStatus('loading');
-  var evQ=userId&&userId!=='u1'
-    ?supabase.from('evaluations').select('*').eq('evaluator_id',userId).order('created_at')
-    :supabase.from('evaluations').select('*').order('created_at');
   return Promise.all([
-    supabase.from('users').select('*'),
-    supabase.from('sessions').select('*'),
-    supabase.from('cigars').select('*').order('sort_order'),
-    supabase.from('master_evals').select('*').order('created_at'),
-    supabase.from('turmas').select('*'),
-    evQ
+    fetch(base+'/users?select=*',{headers:hdrs}).then(function(r){return r.json();}),
+    fetch(base+'/sessions?select=*',{headers:hdrs}).then(function(r){return r.json();}),
+    fetch(base+'/cigars?select=*&order=sort_order',{headers:hdrs}).then(function(r){return r.json();}),
+    fetch(base+'/master_evals?select=*&order=created_at',{headers:hdrs}).then(function(r){return r.json();}),
+    fetch(base+'/turmas?select=*',{headers:hdrs}).then(function(r){return r.json();}),
+    fetch(evUrl,{headers:hdrs}).then(function(r){return r.json();})
   ]).then(function(r){
-    if(r[0].error)throw r[0].error;
-    var usersData=(r[0].data||[]).map(function(u){return Object.assign({ativo:true},u);});
-    var sess=(r[1].data||[]).map(function(s){
-      var cs=(r[2].data||[]).filter(function(c){return c.session_id===s.id;}).map(function(c){
+    var usersData=(Array.isArray(r[0])?r[0]:[]).map(function(u){return Object.assign({ativo:true},u);});
+    var cigarsData=Array.isArray(r[2])?r[2]:[];
+    var sess=(Array.isArray(r[1])?r[1]:[]).map(function(s){
+      var cs=cigarsData.filter(function(c){return c.session_id===s.id;}).map(function(c){
         return{id:c.id,nome:c.nome,marca:c.marca||'',origem:c.origem||'',formato:c.formato||'',cepo:c.cepo||'',comprimento:c.comprimento||'',tom:c.tom||'',codigoAvaliar:c.codigo_avaliar||'',foto_charuto:c.foto_charuto||'',foto_anilha:c.foto_anilha||''};
       });
       return{id:s.id,name:s.name,status:s.status,createdAt:s.created_at,assignedTo:s.assigned_to||[],turmaId:s.turma_id||'',cigars:cs};
     });
-    var mEvs=(r[3].data||[]).map(function(e){return{id:e.id,sessionId:e.session_id,cigarId:e.cigar_id,date:e.eval_date,scores:e.scores||{},notas:e.notas||{},forca:e.forca||'',notas_prim:e.notas_prim||[],evolucao:e.evolucao||''};});
-    var turmas=(r[4].data||[]).map(function(t){return{id:t.id,name:t.name,ativo:t.ativo!==false,createdAt:t.created_at};});
-    var evs=(r[5].data||[]).map(function(e){return{id:e.id,sessionId:e.session_id,cigarId:e.cigar_id,evaluatorId:e.evaluator_id,evaluatorName:e.evaluator_name,date:e.eval_date,scores:e.scores||{},notas:e.notas||{},forca:e.forca||'',notas_prim:e.notas_prim||[],evolucao:e.evolucao||'',umidade:e.umidade||'',harmonizacao:e.harmonizacao||'',obs:e.obs||'',ident:e.ident||{},foto_charuto:e.foto_charuto||'',foto_anilha:e.foto_anilha||''};});
-    upd(function(){return{users:usersData,sessions:sess,evaluations:evs,masterEvals:mEvs,turmas:turmas};});
+    var mEvs=(Array.isArray(r[3])?r[3]:[]).map(function(e){return{id:e.id,sessionId:e.session_id,cigarId:e.cigar_id,date:e.eval_date,scores:e.scores||{},notas:e.notas||{},forca:e.forca||'',notas_prim:e.notas_prim||[],evolucao:e.evolucao||''};});
+    var turmas=(Array.isArray(r[4])?r[4]:[]).map(function(t){return{id:t.id,name:t.name,ativo:t.ativo!==false,createdAt:t.created_at};});
+    var evs=(Array.isArray(r[5])?r[5]:[]).map(function(e){return{id:e.id,sessionId:e.session_id,cigarId:e.cigar_id,evaluatorId:e.evaluator_id,evaluatorName:e.evaluator_name,date:e.eval_date,scores:e.scores||{},notas:e.notas||{},forca:e.forca||'',notas_prim:e.notas_prim||[],evolucao:e.evolucao||'',umidade:e.umidade||'',harmonizacao:e.harmonizacao||'',obs:e.obs||'',ident:e.ident||{},foto_charuto:e.foto_charuto||'',foto_anilha:e.foto_anilha||''};});
+    if(usersData.length>0){
+      upd(function(){return{users:usersData,sessions:sess,evaluations:evs,masterEvals:mEvs,turmas:turmas};});
+    }
     setSyncStatus('ok');
   }).catch(function(e){console.error('loadAll error',e);setSyncStatus('error');});
 }
 function DB_saveSession(ss){
-  if(!USE_CLOUD||!supabase)return Promise.resolve();
-  console.log('DB_saveSession called, id:',ss.id,'name:',ss.name);
-  return supabase.from('sessions').upsert({id:ss.id,name:ss.name,status:ss.status,created_at:ss.createdAt,assigned_to:Array.isArray(ss.assignedTo)?ss.assignedTo:[],turma_id:ss.turmaId||null}).then(function(r1){
-    console.log('sessions upsert result:', JSON.stringify(r1));
-    if(r1.error){
-      alert('ERRO sessions: '+JSON.stringify(r1.error));
-      console.error('saveSession error:',r1.error);throw new Error(r1.error.message);
-    }
-    alert('Session saved OK! ID: '+ss.id);
-    var chain=Promise.resolve();
-    ss.cigars.forEach(function(c,i){
-      chain=chain.then(function(){
-        return supabase.from('cigars').upsert({id:c.id,session_id:ss.id,nome:c.nome,marca:c.marca||'',origem:c.origem||'',formato:c.formato||'',cepo:c.cepo||'',comprimento:c.comprimento||'',tom:c.tom||'',codigo_avaliar:c.codigoAvaliar||'',foto_charuto:c.foto_charuto||'',foto_anilha:c.foto_anilha||'',sort_order:i});
-      });
+  if(!USE_CLOUD)return Promise.resolve();
+  var url='https://kgsmaimleqqporogzayb.supabase.co/rest/v1/sessions';
+  var key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+  var hdrs={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
+  var body=[{id:ss.id,name:ss.name,status:ss.status,created_at:ss.createdAt,assigned_to:Array.isArray(ss.assignedTo)?ss.assignedTo:[],turma_id:ss.turmaId||null}];
+  return fetch(url,{method:'POST',headers:hdrs,body:JSON.stringify(body)})
+    .then(function(r){
+      if(r.status>=200&&r.status<300){
+        // Save cigars
+        var chain=Promise.resolve();
+        (ss.cigars||[]).forEach(function(c,i){
+          chain=chain.then(function(){
+            return fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/cigars',{method:'POST',headers:hdrs,
+              body:JSON.stringify([{id:c.id,session_id:ss.id,nome:c.nome,marca:c.marca||'',origem:c.origem||'',formato:c.formato||'',cepo:c.cepo||'',comprimento:c.comprimento||'',tom:c.tom||'',codigo_avaliar:c.codigoAvaliar||'',foto_charuto:c.foto_charuto||'',foto_anilha:c.foto_anilha||'',sort_order:i}])
+            });
+          });
+        });
+        return chain;
+      }
+      return r.text().then(function(t){throw new Error('HTTP '+r.status+': '+t);});
     });
-    return chain;
-  });
 }
 function DB_deleteSession(id){
-  if(!USE_CLOUD||!supabase)return Promise.resolve();
-  return supabase.from('evaluations').delete().eq('session_id',id).then(function(){
-    return supabase.from('cigars').delete().eq('session_id',id);
-  }).then(function(){
-    return supabase.from('sessions').delete().eq('id',id);
-  });
+  if(!USE_CLOUD)return Promise.resolve();
+  var key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+  var hdrs={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json'};
+  return fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/evaluations?session_id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:hdrs})
+    .then(function(){return fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/cigars?session_id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:hdrs});})
+    .then(function(){return fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/sessions?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:hdrs});});
 }
 function DB_saveEval(ev){
-  if(!USE_CLOUD||!supabase)return Promise.resolve();
-  return supabase.from('evaluations').upsert({id:ev.id,session_id:ev.sessionId,cigar_id:ev.cigarId,evaluator_id:ev.evaluatorId,evaluator_name:ev.evaluatorName,eval_date:ev.date,scores:ev.scores,notas:ev.notas,forca:ev.forca,notas_prim:ev.notas_prim,evolucao:ev.evolucao,harmonizacao:ev.harmonizacao,obs:ev.obs,ident:ev.ident,foto_charuto:ev.foto_charuto||'',foto_anilha:ev.foto_anilha||''}).then(function(r){
-    if(r.error){console.error('saveEval error:',r.error);throw new Error(r.error.message);}
-  });
+  if(!USE_CLOUD)return Promise.resolve();
+  var key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+  var hdrs={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
+  return fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/evaluations',{method:'POST',headers:hdrs,
+    body:JSON.stringify([{id:ev.id,session_id:ev.sessionId,cigar_id:ev.cigarId,evaluator_id:ev.evaluatorId,evaluator_name:ev.evaluatorName,eval_date:ev.date,scores:ev.scores,notas:ev.notas,forca:ev.forca,notas_prim:ev.notas_prim,evolucao:ev.evolucao,harmonizacao:ev.harmonizacao,obs:ev.obs,ident:ev.ident,foto_charuto:ev.foto_charuto||'',foto_anilha:ev.foto_anilha||''}])
+  }).then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error(t);});});
 }
 function DB_saveMasterEval(ev){
-  if(!USE_CLOUD||!supabase)return Promise.resolve();
-  return supabase.from('master_evals').upsert({id:ev.id,session_id:ev.sessionId,cigar_id:ev.cigarId,eval_date:ev.date,scores:ev.scores,notas:ev.notas,forca:ev.forca,notas_prim:ev.notas_prim,evolucao:ev.evolucao}).then(function(r){
-    if(r&&r.error)console.error('saveMasterEval error:',r.error);
-  });
+  if(!USE_CLOUD)return Promise.resolve();
+  var key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+  var hdrs={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
+  return fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/master_evals',{method:'POST',headers:hdrs,
+    body:JSON.stringify([{id:ev.id,session_id:ev.sessionId,cigar_id:ev.cigarId,eval_date:ev.date,scores:ev.scores,notas:ev.notas,forca:ev.forca,notas_prim:ev.notas_prim,evolucao:ev.evolucao}])
+  }).then(function(r){if(!r.ok)return r.text().then(function(t){console.error('saveMasterEval error:',t);});});
 }
 function DB_updateStatus(id,st){
-  if(!USE_CLOUD||!supabase)return Promise.resolve();
-  return supabase.from('sessions').update({status:st}).eq('id',id).then(function(r){
-    if(r&&r.error)console.error('updateStatus error:',r.error);
-  });
+  if(!USE_CLOUD)return Promise.resolve();
+  var key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+  var hdrs={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json'};
+  return fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/sessions?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:hdrs,body:JSON.stringify({status:st})})
+    .then(function(r){if(!r.ok)return r.text().then(function(t){console.error('updateStatus error:',t);});});
 }
 function DB_saveUser(u){
-  if(!USE_CLOUD||!supabase)return Promise.resolve();
-  return supabase.from('users').upsert({id:u.id,name:u.name,role:u.role,pin:u.pin,ativo:u.ativo!==false,turma_id:u.turmaId||null}).then(function(){});
+  if(!USE_CLOUD)return Promise.resolve();
+  var key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+  var hdrs={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
+  return fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/users',{method:'POST',headers:hdrs,
+    body:JSON.stringify([{id:u.id,name:u.name,role:u.role,pin:u.pin,ativo:u.ativo!==false,turma_id:u.turmaId||null}])
+  }).then(function(){});
 }
 function DB_saveTurma(t){
-  if(!USE_CLOUD||!supabase)return Promise.resolve();
-  return supabase.from('turmas').upsert({id:t.id,name:t.name,ativo:t.ativo!==false,created_at:t.createdAt}).then(function(){});
+  if(!USE_CLOUD)return Promise.resolve();
+  var key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+  var hdrs={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
+  return fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/turmas',{method:'POST',headers:hdrs,
+    body:JSON.stringify([{id:t.id,name:t.name,ativo:t.ativo!==false,created_at:t.createdAt}])
+  }).then(function(){});
 }
-function DB_subscribeAll(cb){
-  if(!USE_CLOUD||!supabase)return null;
-  var ch=supabase.channel('epicure')
-    .on('postgres_changes',{event:'*',schema:'public',table:'evaluations'},function(){DB_loadAll(null).then(cb);})
-    .on('postgres_changes',{event:'*',schema:'public',table:'sessions'},function(){DB_loadAll(null).then(cb);})
-    .on('postgres_changes',{event:'*',schema:'public',table:'master_evals'},function(){DB_loadAll(null).then(cb);})
-    .subscribe();
-  return ch;
-}
+function DB_subscribeAll(cb){return null;}
 var DB={
   loadAll:DB_loadAll,
   saveSession:DB_saveSession,
@@ -564,7 +462,7 @@ function EvalForm(p){
 function AppAvaliador(p){
   var tab=React.useState('avaliar'),t=tab[0],setT=tab[1],tick=React.useState(0),setTk=tick[1];
   var tabs=[{id:'avaliar',icon:'✦',label:'Avaliar'},{id:'historico',icon:'◉',label:'Histórico'},{id:'perfil',icon:'◈',label:'Perfil'}];
-  React.useEffect(function(){DB.loadAll(p.user.id).then(function(){setTk(function(n){return n+1;});});var ch=DB.subscribeAll(function(){DB.loadAll(p.user.id).then(function(){setTk(function(n){return n+1;});});});return function(){if(ch&&supabase)supabase.removeChannel(ch);};},[]);
+  React.useEffect(function(){DB.loadAll(p.user.id).then(function(){setTk(function(n){return n+1;});});var ch=DB.subscribeAll(function(){DB.loadAll(p.user.id).then(function(){setTk(function(n){return n+1;});});});return function(){// no-op: subscribeAll disabled};},[]);
 
   function TabAvaliar(){
     var selSS=React.useState(null),selC=React.useState(null),saved=React.useState(false),saving=React.useState(false),editEv=React.useState(null);
@@ -673,7 +571,7 @@ function AppAvaliador(p){
 function AppSommelier(p){
   var tab=React.useState('dash'),t=tab[0],setT=tab[1],tick=React.useState(0),setTk=tick[1];
   var tabs=[{id:'dash',icon:'◈',label:'Painel'},{id:'sessoes',icon:'◉',label:'Sessões'},{id:'desvios',icon:'⧉',label:'Desvios'},{id:'equipe',icon:'✦',label:'Equipe'}];
-  React.useEffect(function(){DB.loadAll(null).then(function(){setTk(function(n){return n+1;});});var ch=DB.subscribeAll(function(){DB.loadAll(null).then(function(){setTk(function(n){return n+1;});});});return function(){if(ch&&supabase)supabase.removeChannel(ch);};},[]);
+  React.useEffect(function(){DB.loadAll(null).then(function(){setTk(function(n){return n+1;});});var ch=DB.subscribeAll(function(){DB.loadAll(null).then(function(){setTk(function(n){return n+1;});});});return function(){// no-op: subscribeAll disabled};},[]);
 
   function TabDash(){
     var confirmLogout=React.useState(false);
@@ -847,7 +745,7 @@ function AppSommelier(p){
     function startEdit(av){setFv({name:av.name,pin:av.pin,turmaId:av.turmaId||''});setEa(av);setShowF(true);}
     function save(){if(!fv.name||fv.pin.length<4)return;var u=Object.assign({},ea||{id:nid()},{name:fv.name,role:'avaliador',pin:fv.pin,ativo:ea?ea.ativo:true,turmaId:fv.turmaId||null});upd(function(st){var filtered=ea?st.users.filter(function(x){return x.id!==ea.id;}):st.users;return Object.assign({},st,{users:filtered.concat([u])});});DB.saveUser(u);setShowF(false);setEa(null);setTk2(function(n){return n+1;});}
     function toggleAtivo(av){var u=Object.assign({},av,{ativo:!av.ativo});upd(function(st){return Object.assign({},st,{users:st.users.map(function(x){return x.id===av.id?u:x;})});});DB.saveUser(u);setTk2(function(n){return n+1;});}
-    function deleteAv(id){upd(function(st){return Object.assign({},st,{users:st.users.filter(function(x){return x.id!==id;})});});if(USE_CLOUD&&supabase){supabase.from('users').delete().eq('id',id);}setDc(null);setTk2(function(n){return n+1;});}
+    function deleteAv(id){upd(function(st){return Object.assign({},st,{users:st.users.filter(function(x){return x.id!==id;})});});if(USE_CLOUD){var k='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/users?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':k,'Authorization':'Bearer '+k}}).then(function(){setDc(null);setTk2(function(n){return n+1;});});}else{setDc(null);setTk2(function(n){return n+1;});}}
 
     return h('div',{className:'sc'},h('div',{className:'pd'},[
       h(ConfirmModal,{key:'dc',show:!!dc,title:'Deletar Avaliador',message:'Excluir "'+(dc&&dc.name)+'"?',sub:'O histórico de avaliações será preservado.',yesLabel:'Sim, deletar',noLabel:'Cancelar',danger:true,onYes:function(){deleteAv(dc.id);},onNo:function(){setDc(null);}}),
@@ -880,7 +778,7 @@ function AppSommelier(p){
     function startEdit(t){setFv({name:t.name});setEt(t);setShowF(true);}
     function save(){if(!fv.name.trim())return;var t=Object.assign({},et||{id:nid(),createdAt:today()},{name:fv.name.trim(),ativo:et?et.ativo:true});upd(function(st){var filtered=et?st.turmas.filter(function(x){return x.id!==et.id;}):st.turmas;return Object.assign({},st,{turmas:filtered.concat([t])});});DB.saveTurma(t);setShowF(false);setEt(null);setTk2(function(n){return n+1;});}
     function toggleAtivo(t){var updated=Object.assign({},t,{ativo:!t.ativo});upd(function(st){return Object.assign({},st,{turmas:st.turmas.map(function(x){return x.id===t.id?updated:x;})});});DB.saveTurma(updated);setTk2(function(n){return n+1;});}
-    function deleteTurma(id){upd(function(st){return Object.assign({},st,{turmas:st.turmas.filter(function(x){return x.id!==id;})});});if(USE_CLOUD&&supabase){supabase.from('turmas').delete().eq('id',id);}setDc(null);setTk2(function(n){return n+1;});}
+    function deleteTurma(id){upd(function(st){return Object.assign({},st,{turmas:st.turmas.filter(function(x){return x.id!==id;})});});if(USE_CLOUD){var k='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/turmas?id=eq.'+encodeURIComponent(id),{method:'DELETE',headers:{'apikey':k,'Authorization':'Bearer '+k}}).then(function(){setDc(null);setTk2(function(n){return n+1;});});}else{setDc(null);setTk2(function(n){return n+1;});}}
 
     return h('div',{className:'sc'},h('div',{className:'pd'},[
       h(ConfirmModal,{key:'dc',show:!!dc,title:'Deletar Turma',message:'Excluir "'+((dc&&dc.name)||'')+'"?',sub:'Os avaliadores desta turma não serão removidos. O histórico de avaliações é preservado.',yesLabel:'Sim, deletar',noLabel:'Cancelar',danger:true,onYes:function(){deleteTurma(dc.id);},onNo:function(){setDc(null);}}),
@@ -922,12 +820,12 @@ function LoginScreen(p){
     // Se Supabase ativo, atualiza lista em background
     if(USE_CLOUD&&supabase){
       var timer=setTimeout(function(){setLoadingUsers(false);},3000);
-      supabase.from('users').select('id,name,role,ativo,turma_id').eq('ativo',true)
-        .then(function(res){
+      var key2='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+      fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/users?ativo=eq.true&select=id,name,role,ativo,turma_id',{headers:{'apikey':key2,'Authorization':'Bearer '+key2}})
+        .then(function(r){return r.json();})
+        .then(function(data){
           clearTimeout(timer);
-          if(res.data&&res.data.length){
-            setUsers(res.data.map(function(u){return Object.assign({pin:'',ativo:true},u);}));
-          }
+          if(data&&data.length){setUsers(data.map(function(u){return Object.assign({pin:'',ativo:true},u);}));}
         }).catch(function(e){console.error('users load error',e);});
     }
   },[]);
@@ -938,11 +836,14 @@ function LoginScreen(p){
   function tryLogin(){
     if(!sl){setEr('Selecione um usuário.');return;}
     setLd(true);
-    if(USE_CLOUD&&supabase){
-      supabase.from('users').select('*').eq('id',sl).eq('pin',pn).eq('ativo',true).single()
-        .then(function(res){
-          if(res.error||!res.data){setLd(false);setEr('PIN incorreto.');return;}
-          var dbUser=Object.assign({ativo:true},res.data);
+    if(USE_CLOUD){
+      var key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
+      var hdrs={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json'};
+      fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/users?id=eq.'+encodeURIComponent(sl)+'&pin=eq.'+encodeURIComponent(pn)+'&ativo=eq.true&select=*',{headers:hdrs})
+        .then(function(r){return r.json();})
+        .then(function(data){
+          if(!data||!data[0]){setLd(false);setEr('PIN incorreto.');return;}
+          var dbUser=Object.assign({ativo:true},data[0]);
           DB.loadAll(dbUser.id).then(function(){
             setLd(false);
             p.onLogin(dbUser);
