@@ -10,7 +10,7 @@
 <title>Epicure Cigar Sommelier v8.1</title>
 <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -605,12 +605,7 @@ function AppSommelier(p){
     function toggleAv(id){setAsn(function(prev){return prev.indexOf(id)>-1?prev.filter(function(x){return x!==id;}):[...prev,id];});}
     function save(){
       if(!nm||cgs.length===0||asn.length===0)return;
-      // Debug: show exact state
-      var dbgMsg='save() chamado\nUSE_CLOUD='+USE_CLOUD+'\nsupabase='+!!supabase+'\nwindow.supabase='+!!window.supabase+'\nnm='+nm+'\ncigars='+cgs.length+'\nassigned='+asn.length;
-      console.log(dbgMsg);
-      if(!USE_CLOUD||!supabase){
-        alert('MODO LOCAL ATIVO - dados nao serao salvos.\n'+dbgMsg);
-      }
+      console.log('save() USE_CLOUD='+USE_CLOUD+' supabase='+!!supabase);
       setSav(true);
       var ss={id:(initData&&initData.id)||nid(),name:nm,status:(initData&&initData.status)||'ativa',createdAt:(initData&&initData.createdAt)||today(),cigars:cgs,assignedTo:asn,turmaId:turmaId};
       upd(function(st){var filtered=initData?st.sessions.filter(function(x){return x.id!==initData.id;}):st.sessions;return Object.assign({},st,{sessions:[ss].concat(filtered)});});
