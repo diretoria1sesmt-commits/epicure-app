@@ -818,7 +818,7 @@ function LoginScreen(p){
     setUsers(_DEMO_STORE.users);
     setLoadingUsers(false);
     // Se Supabase ativo, atualiza lista em background
-    if(USE_CLOUD&&supabase){
+    if(USE_CLOUD){
       var timer=setTimeout(function(){setLoadingUsers(false);},3000);
       var key2='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtnc21haW1sZXFxcG9yb2d6YXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzgxMDQsImV4cCI6MjA5MzA1NDEwNH0.UWoFhZVqWNodOcjZfuJb_9HGm8HC13Ta29Xi_KTWCjo';
       fetch('https://kgsmaimleqqporogzayb.supabase.co/rest/v1/users?ativo=eq.true&select=id,name,role,ativo,turma_id',{headers:{'apikey':key2,'Authorization':'Bearer '+key2}})
